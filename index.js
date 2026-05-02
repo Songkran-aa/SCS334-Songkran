@@ -35,6 +35,11 @@ app.delete('/user', function (req, res) {
   res.send('Got a DELETE request at /user');
 });
 
+// GET /webhook — ให้เปิดทดสอบในเบราว์เซอร์ได้ 200 (LINE ส่งเหตุการณ์จริงด้วย POST เท่านั้น)
+app.get('/webhook', function (req, res) {
+  res.status(200).type('text/plain').send('Webhook endpoint OK — LINE sends POST here');
+});
+
 // Webhook — รูปแบบเดียวกับ synopsis (middleware + handler ใน app.post เดียว)
 // ตั้ง Webhook URL ใน LINE Developers เป็น https://<โฮสต์>/webhook
 app.post('/webhook', line.middleware(middlewareConfig), (req, res) => {
