@@ -18,9 +18,8 @@ const client = line.LineBotClient.fromChannelAccessToken({
     process.env.CHANNEL_ACCESS_TOKEN || 'YOUR_CHANNEL_ACCESS_TOKEN',
 });
 
-// Respond with Hello World! on the homepage:
-app.get('/', function (req, res) {
-  res.send('Hello World!');
+app.get('/', (req, res) => {
+  res.send('hello world, Songkran');
 });
 
 app.post('/', function (req, res) {
@@ -64,7 +63,7 @@ function handleEvent(event) {
   });
 }
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`listening on ${port}`);
+const PORT = process.env.PORT || 3021;
+app.listen(PORT, () => {
+  console.log(`listening on ${PORT}`);
 });
