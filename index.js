@@ -267,6 +267,8 @@ app.listen(PORT, () => {
   console.log(`listening on ${PORT}`);
   if (getSupabase()) console.log('Supabase: configured');
   else console.log('Supabase: not configured (set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env)');
-  if (process.env.GEMINI_API_KEY) console.log('Gemini: configured (gemini-2.0-flash-lite)');
+  if (process.env.GEMINI_API_KEY?.trim()) {
+    console.log('Gemini: configured (gemini-2.5-flash with 2.0 fallback)');
+  }
   else console.log('Gemini: not configured (set GEMINI_API_KEY in .env)');
 });
