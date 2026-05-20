@@ -1,0 +1,1 @@
+-- ดู sql/create_message.sql (ตาราง messages ตามเอกสารวิชา)

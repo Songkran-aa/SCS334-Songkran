@@ -49,8 +49,16 @@ npm install
    | `CHANNEL_ACCESS_TOKEN` | Channel access token (long-lived) |
    | `CHANNEL_SECRET` | Channel secret |
    | `LINE_CHANNEL_ID` | (ไม่บังคับ) ใช้อ้างอิงเท่านั้น |
+| `SUPABASE_URL` | Project URL จาก Supabase → Settings → API / Data API |
+| `SUPABASE_KEY` | anon public key (ตามเอกสารวิชา) หรือ service_role บน server |
 
 **อย่า commit ไฟล์ `.env`** — โปรเจกต์นี้มี `.gitignore` ไว้แล้ว
+
+### Supabase (Database)
+
+1. สร้างโปรเจกต์ที่ [supabase.com](https://supabase.com)
+2. Copy โค้ดจาก `sql/create_message.sql` ไป **Run ใน Supabase SQL Editor**
+3. ใส่ค่า API ใน `.env` แล้วรีสตาร์ทแอป — ข้อความ text จาก LINE จะบันทึกลงตาราง `messages`
 
 ---
 
@@ -120,6 +128,8 @@ LINE รับ Webhook เป็น **HTTPS** เท่านั้น จึง
 ```
 SCS334-Songkran/
 ├── index.js          # เซิร์ฟเวอร์หลัก + LINE webhook
+├── lib/supabase.js   # Supabase client
+├── sql/create_message.sql
 ├── package.json
 ├── .env              # สร้างเอง (ไม่ขึ้น Git)
 ├── .env.example      # ตัวอย่างตัวแปรสภาพแวดล้อม

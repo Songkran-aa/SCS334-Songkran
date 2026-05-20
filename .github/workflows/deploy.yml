@@ -24,4 +24,4 @@ jobs:
             cd /var/www/songkran.csbootstrap.com/SCS334-Songkran
             git pull origin main
             npm install
-            pm2 restart all
+            pm2 restart scs334-songkran
