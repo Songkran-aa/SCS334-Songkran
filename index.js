@@ -6,7 +6,11 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { getSupabase } = require('./lib/supabase');
-const { generateLineReply, classifyAnimalImage } = require('./lib/gemini');
+const {
+  generateLineReply,
+  classifyAnimalImage,
+  formatGeminiError,
+} = require('./lib/gemini');
 
 const app = express();
 
@@ -75,9 +79,11 @@ async function handleImage(event) {
       const animalName = await classifyAnimalImage(imageContent.inlineData);
       botReplyText = animalName || 'ไม่พบสัตว์ในรูป';
     } catch (err) {
-      console.error('Gemini classify error:', err);
+      console.error('Gemini classify error:', formatGeminiError(err));
       if (String(err.message).includes('GEMINI_API_KEY')) {
         botReplyText = 'ยังไม่ได้ตั้ง GEMINI_API_KEY บนเซิร์ฟเวอร์';
+      } else if (String(err.message).includes('API key')) {
+        botReplyText = 'GEMINI_API_KEY ไม่ถูกต้องหรือหมดอายุ';
       } else {
         botReplyText = 'จำแนกรูปสัตว์ไม่สำเร็จ';
       }
