@@ -6,7 +6,7 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { getSupabase } = require('./lib/supabase');
-const { generateLineReply } = require('./lib/gemini');
+const { generateLineReply, classifyAnimalImage } = require('./lib/gemini');
 
 const app = express();
 
@@ -63,39 +63,55 @@ async function handleImage(event) {
   const messageId = event.message.id;
   const userId = event.source.userId || 'unknown';
   const replyToken = event.replyToken || '';
-
-  let imageUrl = null;
   const supabase = getSupabase();
 
+  let imageUrl = null;
+  let botReplyText = 'ไม่สามารถประมวลผลรูปได้';
+
   try {
-    if (supabase) {
-      const imageContent = await downloadLineContent(messageId);
+    const imageContent = await downloadLineContent(messageId);
+
+    try {
+      const animalName = await classifyAnimalImage(imageContent.inlineData);
+      botReplyText = animalName || 'ไม่พบสัตว์ในรูป';
+    } catch (err) {
+      console.error('Gemini classify error:', err.message);
+      botReplyText = 'จำแนกรูปสัตว์ไม่สำเร็จ';
+    }
+
+    if (!supabase) {
+      console.error(
+        'Skip Storage upload: ตั้ง SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY ใน .env'
+      );
+    } else if (!imageContent.buffer?.length) {
+      console.error('Skip Storage upload: ดาวน์โหลดรูปจาก LINE ไม่ได้ (buffer ว่าง)');
+    } else {
       const fileName = `${messageId}.jpg`;
+      const storagePath = `bot-uploads/${fileName}`;
       const contentType = imageContent.inlineData.mimeType || 'image/jpeg';
 
-      const { error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('uploads')
-        .upload(`bot-uploads/${fileName}`, imageContent.buffer, {
+        .upload(storagePath, imageContent.buffer, {
           contentType,
           upsert: true,
         });
 
-      if (uploadError) throw new Error(uploadError.message);
-
-      const { data: publicUrlData } = supabase.storage
-        .from('uploads')
-        .getPublicUrl(`bot-uploads/${fileName}`);
-
-      imageUrl = publicUrlData.publicUrl;
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError.message, uploadError);
+      } else {
+        console.log('Storage upload ok:', uploadData?.path || storagePath);
+        const { data: publicUrlData } = supabase.storage
+          .from('uploads')
+          .getPublicUrl(storagePath);
+        imageUrl = publicUrlData.publicUrl;
+      }
     }
   } catch (error) {
     console.error('Error ในการดึงรูปภาพด้วย SDK v9:', error);
   }
 
-  const content = imageUrl || `[Received image message]`;
-  const botReplyText = imageUrl
-    ? 'บันทึกรูปแล้วครับ'
-    : 'ได้รับรูปแล้ว แต่อัปโหลดไม่สำเร็จ';
+  const content = imageUrl || `[image] ${botReplyText}`;
 
   try {
     if (supabase) {
