@@ -50,7 +50,7 @@ npm install
    | `CHANNEL_SECRET` | Channel secret |
    | `LINE_CHANNEL_ID` | (ไม่บังคับ) ใช้อ้างอิงเท่านั้น |
 | `SUPABASE_URL` | Project URL จาก Supabase → Settings → API / Data API |
-| `SUPABASE_KEY` | anon public key (ตามเอกสารวิชา) หรือ service_role บน server |
+| `SUPABASE_SERVICE_ROLE_KEY` | service_role จาก Settings → API (ใช้บน server เท่านั้น) |
 
 **อย่า commit ไฟล์ `.env`** — โปรเจกต์นี้มี `.gitignore` ไว้แล้ว
 

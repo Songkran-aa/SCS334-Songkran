@@ -20,6 +20,110 @@ const client = line.LineBotClient.fromChannelAccessToken({
     process.env.CHANNEL_ACCESS_TOKEN || 'YOUR_CHANNEL_ACCESS_TOKEN',
 });
 
+const channelAccessToken =
+  process.env.CHANNEL_ACCESS_TOKEN ||
+  process.env.LINE_CHANNEL_ACCESS_TOKEN ||
+  '';
+
+// 1. สร้าง Blob Client สำหรับดึงข้อมูลไฟล์โดยเฉพาะ (ของ v9+)
+const lineBlobClient = new line.messagingApi.MessagingApiBlobClient({
+  channelAccessToken,
+});
+
+const downloadLineContent = async (messageId) => {
+  const stream = await lineBlobClient.getMessageContent(messageId);
+  const chunks = [];
+
+  if (stream.arrayBuffer) {
+    const arrayBuffer = await stream.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return {
+      inlineData: {
+        data: buffer.toString('base64'),
+        mimeType: stream.type || 'image/jpeg',
+      },
+      buffer: buffer,
+    };
+  }
+
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  return {
+    inlineData: {
+      data: buffer.toString('base64'),
+      mimeType: 'image/jpeg',
+    },
+    buffer: buffer,
+  };
+};
+
+async function handleImage(event) {
+  const messageId = event.message.id;
+  const userId = event.source.userId || 'unknown';
+  const replyToken = event.replyToken || '';
+
+  let imageUrl = null;
+  const supabase = getSupabase();
+
+  try {
+    if (supabase) {
+      const imageContent = await downloadLineContent(messageId);
+      const fileName = `${messageId}.jpg`;
+      const contentType = imageContent.inlineData.mimeType || 'image/jpeg';
+
+      const { error: uploadError } = await supabase.storage
+        .from('uploads')
+        .upload(`bot-uploads/${fileName}`, imageContent.buffer, {
+          contentType,
+          upsert: true,
+        });
+
+      if (uploadError) throw new Error(uploadError.message);
+
+      const { data: publicUrlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(`bot-uploads/${fileName}`);
+
+      imageUrl = publicUrlData.publicUrl;
+    }
+  } catch (error) {
+    console.error('Error ในการดึงรูปภาพด้วย SDK v9:', error);
+  }
+
+  const content = imageUrl || `[Received image message]`;
+  const botReplyText = imageUrl
+    ? 'บันทึกรูปแล้วครับ'
+    : 'ได้รับรูปแล้ว แต่อัปโหลดไม่สำเร็จ';
+
+  try {
+    if (supabase) {
+      const { error } = await supabase.from('messages').insert([
+        {
+          user_id: userId,
+          message_id: messageId,
+          type: 'image',
+          content: content,
+          reply_token: replyToken,
+          reply_content: botReplyText,
+        },
+      ]);
+
+      if (error) {
+        console.error('Supabase Insert Error:', error.message);
+      }
+    }
+
+    return await client.replyMessage({
+      replyToken: replyToken,
+      messages: [{ type: 'text', text: botReplyText }],
+    });
+  } catch (error) {
+    console.error('เกิดข้อผิดพลาดในการประมวลผลรูปภาพ:', error);
+  }
+}
+
 app.get('/', (req, res) => {
   res.send('hello world, Songkran');
 });
@@ -54,31 +158,25 @@ app.post('/webhook', line.middleware(middlewareConfig), (req, res) => {
 
 // 4. ฟังก์ชันหลักในการจัดการ Event และบันทึกข้อมูล
 async function handleEvent(event) {
-  if (event.type !== 'message') {
+  if (event.type === 'message' && event.message.type === 'image') {
+    return handleImage(event);
+  }
+
+  if (event.type !== 'message' || event.message.type !== 'text') {
     return null;
   }
 
   const userId = event.source.userId || 'unknown';
   const replyToken = event.replyToken || '';
-
   const messageId = event.message.id;
-  const messageType = event.message.type;
+  const content = event.message.text;
 
-  let content = null;
-  let botReplyText = '';
-
-  if (event.message.type === 'text') {
-    content = event.message.text;
-    try {
-      const geminiReply = await generateLineReply(content);
-      botReplyText = geminiReply || content;
-    } catch (err) {
-      console.error('Gemini Error:', err.message);
-      botReplyText = content;
-    }
-  } else {
-    content = `[Received ${messageType} message]`;
-    botReplyText = `ได้รับข้อความประเภท ${messageType} แล้วครับ`;
+  let botReplyText = content;
+  try {
+    const geminiReply = await generateLineReply(content);
+    botReplyText = geminiReply || content;
+  } catch (err) {
+    console.error('Gemini Error:', err.message);
   }
 
   try {
@@ -88,7 +186,7 @@ async function handleEvent(event) {
         {
           user_id: userId,
           message_id: messageId,
-          type: messageType,
+          type: 'text',
           content: content,
           reply_token: replyToken,
           reply_content: botReplyText,
@@ -102,12 +200,7 @@ async function handleEvent(event) {
 
     return await client.replyMessage({
       replyToken: replyToken,
-      messages: [
-        {
-          type: 'text',
-          text: botReplyText,
-        },
-      ],
+      messages: [{ type: 'text', text: botReplyText }],
     });
   } catch (error) {
     console.error('เกิดข้อผิดพลาดในการประมวลผลระบบ:', error);
@@ -118,7 +211,7 @@ const PORT = process.env.PORT || 3021;
 app.listen(PORT, () => {
   console.log(`listening on ${PORT}`);
   if (getSupabase()) console.log('Supabase: configured');
-  else console.log('Supabase: not configured (set SUPABASE_URL + key in .env)');
+  else console.log('Supabase: not configured (set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env)');
   if (process.env.GEMINI_API_KEY) console.log('Gemini: configured (gemini-2.0-flash-lite)');
   else console.log('Gemini: not configured (set GEMINI_API_KEY in .env)');
 });
