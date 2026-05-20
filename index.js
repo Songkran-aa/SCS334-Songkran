@@ -34,6 +34,12 @@ const lineBlobClient = new line.messagingApi.MessagingApiBlobClient({
   channelAccessToken,
 });
 
+function detectMimeType(buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return 'image/jpeg';
+  if (buffer[0] === 0x89 && buffer[1] === 0x50) return 'image/png';
+  return 'image/jpeg';
+}
+
 const downloadLineContent = async (messageId) => {
   const stream = await lineBlobClient.getMessageContent(messageId);
   const chunks = [];
@@ -41,10 +47,11 @@ const downloadLineContent = async (messageId) => {
   if (stream.arrayBuffer) {
     const arrayBuffer = await stream.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const mimeType = stream.type || detectMimeType(buffer);
     return {
       inlineData: {
         data: buffer.toString('base64'),
-        mimeType: stream.type || 'image/jpeg',
+        mimeType,
       },
       buffer: buffer,
     };
@@ -54,10 +61,11 @@ const downloadLineContent = async (messageId) => {
     chunks.push(chunk);
   }
   const buffer = Buffer.concat(chunks);
+  const mimeType = detectMimeType(buffer);
   return {
     inlineData: {
       data: buffer.toString('base64'),
-      mimeType: 'image/jpeg',
+      mimeType,
     },
     buffer: buffer,
   };
@@ -70,24 +78,12 @@ async function handleImage(event) {
   const supabase = getSupabase();
 
   let imageUrl = null;
-  let botReplyText = 'ไม่สามารถประมวลผลรูปได้';
+  let uploadOk = false;
+  let animalName = null;
+  const replyMessages = [];
 
   try {
     const imageContent = await downloadLineContent(messageId);
-
-    try {
-      const animalName = await classifyAnimalImage(imageContent.inlineData);
-      botReplyText = animalName || 'ไม่พบสัตว์ในรูป';
-    } catch (err) {
-      console.error('Gemini classify error:', formatGeminiError(err));
-      if (String(err.message).includes('GEMINI_API_KEY')) {
-        botReplyText = 'ยังไม่ได้ตั้ง GEMINI_API_KEY บนเซิร์ฟเวอร์';
-      } else if (String(err.message).includes('API key')) {
-        botReplyText = 'GEMINI_API_KEY ไม่ถูกต้องหรือหมดอายุ';
-      } else {
-        botReplyText = 'จำแนกรูปสัตว์ไม่สำเร็จ';
-      }
-    }
 
     if (!supabase) {
       console.error(
@@ -110,6 +106,7 @@ async function handleImage(event) {
       if (uploadError) {
         console.error('Storage upload error:', uploadError.message, uploadError);
       } else {
+        uploadOk = true;
         console.log('Storage upload ok:', uploadData?.path || storagePath);
         const { data: publicUrlData } = supabase.storage
           .from('uploads')
@@ -117,11 +114,42 @@ async function handleImage(event) {
         imageUrl = publicUrlData.publicUrl;
       }
     }
+
+    try {
+      animalName = await classifyAnimalImage(imageContent.inlineData);
+    } catch (err) {
+      console.error('Gemini classify error:', formatGeminiError(err));
+    }
+
+    replyMessages.push({
+      type: 'text',
+      text: uploadOk ? 'ส่งรูปภาพสำเร็จ' : 'ส่งรูปภาพไม่สำเร็จ',
+    });
+
+    if (animalName) {
+      replyMessages.push({
+        type: 'text',
+        text: animalName.includes('ไม่พบสัตว์')
+          ? animalName
+          : `สัตว์ชนิด: ${animalName}`,
+      });
+    } else {
+      replyMessages.push({
+        type: 'text',
+        text: 'จำแนกรูปสัตว์ไม่สำเร็จ',
+      });
+    }
   } catch (error) {
     console.error('Error ในการดึงรูปภาพด้วย SDK v9:', error);
+    replyMessages.length = 0;
+    replyMessages.push(
+      { type: 'text', text: 'ส่งรูปภาพไม่สำเร็จ' },
+      { type: 'text', text: 'จำแนกรูปสัตว์ไม่สำเร็จ' }
+    );
   }
 
-  const content = imageUrl || `[image] ${botReplyText}`;
+  const replyContent = replyMessages.map((m) => m.text).join('\n');
+  const content = imageUrl || `[image] ${replyContent}`;
 
   try {
     if (supabase) {
@@ -132,7 +160,7 @@ async function handleImage(event) {
           type: 'image',
           content: content,
           reply_token: replyToken,
-          reply_content: botReplyText,
+          reply_content: replyContent,
         },
       ]);
 
@@ -143,7 +171,7 @@ async function handleImage(event) {
 
     return await client.replyMessage({
       replyToken: replyToken,
-      messages: [{ type: 'text', text: botReplyText }],
+      messages: replyMessages,
     });
   } catch (error) {
     console.error('เกิดข้อผิดพลาดในการประมวลผลรูปภาพ:', error);
@@ -202,7 +230,8 @@ async function handleEvent(event) {
     const geminiReply = await generateLineReply(content);
     botReplyText = geminiReply || content;
   } catch (err) {
-    console.error('Gemini Error:', err.message);
+    console.error('Gemini Error:', formatGeminiError(err));
+    botReplyText = `ขออภัย Gemini ไม่พร้อมตอบตอนนี้\n${content}`;
   }
 
   try {
