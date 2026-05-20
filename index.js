@@ -75,8 +75,12 @@ async function handleImage(event) {
       const animalName = await classifyAnimalImage(imageContent.inlineData);
       botReplyText = animalName || 'ไม่พบสัตว์ในรูป';
     } catch (err) {
-      console.error('Gemini classify error:', err.message);
-      botReplyText = 'จำแนกรูปสัตว์ไม่สำเร็จ';
+      console.error('Gemini classify error:', err);
+      if (String(err.message).includes('GEMINI_API_KEY')) {
+        botReplyText = 'ยังไม่ได้ตั้ง GEMINI_API_KEY บนเซิร์ฟเวอร์';
+      } else {
+        botReplyText = 'จำแนกรูปสัตว์ไม่สำเร็จ';
+      }
     }
 
     if (!supabase) {
